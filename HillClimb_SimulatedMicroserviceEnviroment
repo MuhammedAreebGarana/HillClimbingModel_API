@@ -1,0 +1,91 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Simulated Netflix Microservice Environment
+def simulate_microservice(cache_size, traffic_level, anomaly=False):
+    if anomaly:
+        traffic_level *= 2
+        memory_leak = 30
+    else:
+        memory_leak = 0
+
+    base_mem = 50 + 0.4 * cache_size + 0.2 * traffic_level + memory_leak
+    memory_usage = base_mem + np.random.normal(0, 4)
+
+    ideal_cache = 150
+    latency = 100 - 0.2 * min(cache_size, ideal_cache) + 0.05 * traffic_level + 0.02 * max(cache_size - ideal_cache, 0)
+    latency += np.random.normal(0, 3)
+
+    return memory_usage, latency
+
+def compute_score(memory, latency):
+    return -0.6 * memory - 0.4 * latency
+
+def evaluate_config(cache_size, traffic_level, anomaly=False, trials=6):
+    scores, mems, lats = [], [], []
+    for _ in range(trials):
+        mem, lat = simulate_microservice(cache_size, traffic_level, anomaly)
+        mems.append(mem)
+        lats.append(lat)
+        scores.append(compute_score(mem, lat))
+    return np.mean(scores), np.mean(mems), np.mean(lats)
+
+def hill_climb_adaptive(time_steps=30, initial_cache=100, step=10):
+    cache_size = initial_cache
+    history = {
+        "time": [], "traffic": [], "cache_size": [],
+        "latency": [], "memory": [], "score": [], "anomaly": []
+    }
+
+    for t in range(time_steps):
+        traffic = 100 + 20 * (t % 10) + np.random.randint(-10, 10)
+        anomaly = True if t == 15 else False
+
+        best_score, best_mem, best_lat = evaluate_config(cache_size, traffic, anomaly)
+
+        neighbors = [cache_size + step, cache_size - step]
+        neighbors = [n for n in neighbors if n > 0]
+
+        for n in neighbors:
+            score, mem, lat = evaluate_config(n, traffic, anomaly)
+            if score > best_score:
+                cache_size, best_score, best_mem, best_lat = n, score, mem, lat
+                break
+
+        history["time"].append(t)
+        history["traffic"].append(traffic)
+        history["cache_size"].append(cache_size)
+        history["latency"].append(best_lat)
+        history["memory"].append(best_mem)
+        history["score"].append(best_score)
+        history["anomaly"].append(anomaly)
+
+    return history
+
+results = hill_climb_adaptive()
+
+plt.figure(figsize=(12, 10))
+
+plt.subplot(3, 1, 1)
+plt.plot(results["time"], results["cache_size"], label='Cache Size', marker='o')
+plt.title("Adaptive Cache Tuning Over Time")
+plt.ylabel("Cache Size (MB)")
+plt.grid()
+
+plt.subplot(3, 1, 2)
+plt.plot(results["time"], results["latency"], label='Latency', color='orange', marker='x')
+plt.plot(results["time"], results["traffic"], label='Traffic', color='green', linestyle='--')
+plt.ylabel("Latency / Traffic")
+plt.legend()
+plt.grid()
+
+plt.subplot(3, 1, 3)
+plt.plot(results["time"], results["score"], label='Score', color='purple')
+plt.plot(results["time"], results["memory"], label='Memory Usage', color='red', linestyle='--')
+plt.xlabel("Time")
+plt.ylabel("Score / Memory")
+plt.legend()
+plt.grid()
+
+plt.tight_layout()
+plt.show()
