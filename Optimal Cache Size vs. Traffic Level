@@ -1,0 +1,76 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Simulated Netflix Microservice Environment
+
+def simulate_microservice(cache_size, traffic_level):
+    """
+    Simulate the memory and latency of a microservice:
+    - cache_size: memory allocated for caching
+    - traffic_level: simulated request volume
+    """
+    # Memory usage increases with cache size and traffic
+    base_mem = 50 + 0.4 * cache_size + 0.2 * traffic_level
+    memory_noise = np.random.normal(0, 3)
+    memory_usage = base_mem + memory_noise
+
+    # Latency improves with moderate cache (less DB hits) but gets worse if too much memory is allocated (GC pressure)
+    ideal_cache = 150
+    latency = 100 - 0.2 * min(cache_size, ideal_cache) + 0.05 * traffic_level + 0.02 * max(cache_size - ideal_cache, 0)
+    latency_noise = np.random.normal(0, 2)
+    latency += latency_noise
+
+    return memory_usage, latency
+
+# Performance metric (lower is better)
+def score(memory, latency):
+    return -0.6 * memory - 0.4 * latency
+
+# Statistical evaluation
+def evaluate_config(cache_size, traffic_level, trials=8):
+    scores = []
+    for _ in range(trials):
+        mem, lat = simulate_microservice(cache_size, traffic_level)
+        scores.append(score(mem, lat))
+    return np.mean(scores), np.std(scores)
+
+# Hill Climbing Tuner
+def hill_climb(initial_cache=100, step=10, traffic_profile=[100, 150, 200, 300], max_iter=10):
+    config = initial_cache
+    history = []
+
+    for traffic in traffic_profile:
+        best_score, _ = evaluate_config(config, traffic)
+        improved = True
+        iterations = 0
+
+        while improved and iterations < max_iter:
+            neighbors = [config + step, config - step]
+            neighbors = [n for n in neighbors if n > 0]
+            improved = False
+            for neighbor in neighbors:
+                candidate_score, _ = evaluate_config(neighbor, traffic)
+                if candidate_score > best_score:
+                    config = neighbor
+                    best_score = candidate_score
+                    improved = True
+                    break
+            iterations += 1
+        history.append((traffic, config, best_score))
+
+    return history
+
+
+tuning_results = hill_climb()
+
+
+traffic, configs, scores = zip(*tuning_results)
+plt.plot(traffic, configs, marker='o')
+plt.title("Netflix Microservice Tuning - Optimal Cache Size vs Traffic")
+plt.xlabel("Traffic Level")
+plt.ylabel("Optimal Cache Size (MB)")
+plt.grid(True)
+plt.show()
+
+for t, c, s in tuning_results:
+    print(f"Traffic: {t} → Optimal Cache Size: {c} MB | Score: {s:.2f}")
